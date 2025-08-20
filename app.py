@@ -10,10 +10,23 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import logging
+import sys
+from pathlib import Path
 
-from app.config import STREAMLIT_CONFIG
-from app.data import DataLoader, DataProcessor
-from app.visualization import ChartGenerator
+# Add the current directory to Python path for imports
+sys.path.append(str(Path(__file__).parent))
+
+# Import configuration and modules
+try:
+    from app.config import STREAMLIT_CONFIG
+    from app.data import DataLoader, DataProcessor
+    from app.visualization import ChartGenerator
+except ImportError:
+    # Fallback for Streamlit Cloud deployment
+    import config
+    from data import DataLoader, DataProcessor
+    from visualization import ChartGenerator
+    STREAMLIT_CONFIG = config.STREAMLIT_CONFIG
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
