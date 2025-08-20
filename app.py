@@ -115,7 +115,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-@st.cache_data(ttl=3600)  # Cache for 1 hour
+@st.cache_data(ttl=60)  # Cache for 1 minute to prevent stale data
 def load_data():
     """Load property data with caching"""
     loader = DataLoader()
@@ -172,16 +172,16 @@ def show_dashboard(data_processor: DataProcessor, data_loader: DataLoader):
     
     with col3:
         st.metric(
-            label="Average Historical Price",
-            value=f"${stats['historical_avg_price']:,.0f}",
-            help="Average price of historical sales"
+            label="Historical Sales",
+            value=f"{stats['historical_suburbs']}",
+            help="Number of suburbs with historical data"
         )
     
     with col4:
         st.metric(
-            label="Average Current Price",
-            value=f"${stats['current_avg_price']:,.0f}",
-            help="Average price of current listings"
+            label="Current Listings",
+            value=f"{stats['current_suburbs']}",
+            help="Number of suburbs with current listings"
         )
     
     # Data overview

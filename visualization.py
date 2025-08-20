@@ -166,11 +166,14 @@ class ChartGenerator:
     @staticmethod
     def create_price_vs_volume_scatter(suburb_summary: pd.DataFrame) -> go.Figure:
         """Create price vs volume scatter plot"""
+        # Reset index to make suburb names a column
+        plot_data = suburb_summary.reset_index()
+        
         fig = px.scatter(
-            suburb_summary,
+            plot_data,
             x='Average Price',
             y='Sales Count',
-            hover_data=suburb_summary.index,
+            hover_data=['Property locality'],
             title="Suburb Price vs Sales Volume",
             labels={'Average Price': 'Average Price ($)', 'Sales Count': 'Number of Sales'}
         )
