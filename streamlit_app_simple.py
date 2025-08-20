@@ -1,0 +1,576 @@
+#!/usr/bin/env python3
+"""
+Simple Streamlit Web Application for Property Analysis
+No external dependencies - works reliably on Streamlit Cloud
+"""
+
+import streamlit as st
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import numpy as np
+from datetime import datetime, timedelta
+
+# Page configuration
+st.set_page_config(
+    page_title="Sydney Eastern Suburbs Property Analysis",
+    page_icon="🏠",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Custom CSS for better styling
+st.markdown("""
+<style>
+    .main-header {
+        font-size: 3rem;
+        color: #1f77b4;
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    .metric-card {
+        background-color: #f0f2f6;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        border-left: 4px solid #1f77b4;
+    }
+    .insight-box {
+        background-color: #e8f4fd;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        border-left: 4px solid #ff7f0e;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+@st.cache_data
+def generate_sample_data():
+    """Generate realistic sample data for demonstration"""
+    
+    # Eastern Suburbs data
+    suburbs_data = {
+        'Bondi': {'postcode': '2026', 'avg_price': 2500000, 'price_range': 500000},
+        'Coogee': {'postcode': '2031', 'avg_price': 2200000, 'price_range': 400000},
+        'Double Bay': {'postcode': '2027', 'avg_price': 3500000, 'price_range': 800000},
+        'Vaucluse': {'postcode': '2029', 'avg_price': 4500000, 'price_range': 1000000},
+        'Bronte': {'postcode': '2024', 'avg_price': 2800000, 'price_range': 600000},
+        'Rose Bay': {'postcode': '2028', 'avg_price': 3200000, 'price_range': 700000},
+        'Bellevue Hill': {'postcode': '2023', 'avg_price': 3800000, 'price_range': 900000},
+        'Paddington': {'postcode': '2021', 'avg_price': 2000000, 'price_range': 400000}
+    }
+    
+    # Generate historical data (1000 records)
+    historical_data = []
+    start_date = datetime(2020, 1, 1)
+    
+    for i in range(1000):
+        suburb = np.random.choice(list(suburbs_data.keys()))
+        suburb_info = suburbs_data[suburb]
+        
+        # Generate realistic price with some variation
+        base_price = suburb_info['avg_price']
+        price_variation = np.random.normal(0, suburb_info['price_range'] * 0.3)
+        price = max(500000, base_price + price_variation)
+        
+        # Generate date
+        date = start_date + timedelta(days=np.random.randint(0, 1000))
+        
+        # Generate area
+        area = np.random.normal(200, 50)
+        area = max(50, min(500, area))
+        
+        historical_data.append({
+            'Contract date': date,
+            'Purchase price': int(price),
+            'Property post code': suburb_info['postcode'],
+            'Property locality': suburb,
+            'Area': int(area)
+        })
+    
+    # Generate current listings data (20 records)
+    current_data = []
+    for suburb, info in suburbs_data.items():
+        for _ in range(np.random.randint(2, 5)):  # 2-4 listings per suburb
+            base_price = info['avg_price'] * 1.1  # Current prices slightly higher
+            price_variation = np.random.normal(0, info['price_range'] * 0.2)
+            price = max(500000, base_price + price_variation)
+            
+            area = np.random.normal(200, 50)
+            area = max(50, min(500, area))
+            
+            current_data.append({
+                'price': int(price),
+                'postcode': info['postcode'],
+                'suburb': suburb,
+                'Area': int(area)
+            })
+    
+    return pd.DataFrame(historical_data), pd.DataFrame(current_data)
+
+def show_dashboard(historical_data, current_data):
+    """Show the main dashboard"""
+    st.header("📊 Property Market Dashboard")
+    
+    # Key metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric(
+            label="Historical Sales",
+            value=f"{len(historical_data):,}",
+            help="Total number of historical property sales"
+        )
+    
+    with col2:
+        st.metric(
+            label="Current Listings",
+            value=f"{len(current_data):,}",
+            help="Total number of current property listings"
+        )
+    
+    with col3:
+        avg_price = historical_data['Purchase price'].mean()
+        st.metric(
+            label="Average Historical Price",
+            value=f"${avg_price:,.0f}",
+            help="Average price of historical sales"
+        )
+    
+    with col4:
+        avg_current = current_data['price'].mean()
+        st.metric(
+            label="Average Current Price",
+            value=f"${avg_current:,.0f}",
+            help="Average price of current listings"
+        )
+    
+    # Data overview
+    st.subheader("📋 Data Overview")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.write("**Historical Sales Data**")
+        st.write(f"- **Records**: {len(historical_data):,}")
+        st.write(f"- **Date Range**: {historical_data['Contract date'].min().strftime('%Y-%m-%d')} to {historical_data['Contract date'].max().strftime('%Y-%m-%d')}")
+        st.write(f"- **Postcodes**: {historical_data['Property post code'].nunique()}")
+        st.write(f"- **Suburbs**: {historical_data['Property locality'].nunique()}")
+    
+    with col2:
+        st.write("**Current Listings Data**")
+        st.write(f"- **Records**: {len(current_data):,}")
+        st.write(f"- **Postcodes**: {current_data['postcode'].nunique()}")
+        st.write(f"- **Suburbs**: {current_data['suburb'].nunique()}")
+        st.write(f"- **With Area Data**: {current_data['Area'].notna().sum()}")
+    
+    # Market insights
+    st.subheader("💡 Market Insights")
+    
+    # Calculate price growth
+    hist_median = historical_data['Purchase price'].median()
+    current_median = current_data['price'].median()
+    growth = ((current_median - hist_median) / hist_median) * 100
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown(f"""
+        <div class="insight-box">
+            <h4>📈 Price Growth Trend</h4>
+            <p>Historical median: <strong>${hist_median:,.0f}</strong></p>
+            <p>Current median: <strong>${current_median:,.0f}</strong></p>
+            <p>Growth: <strong>{growth:+.1f}%</strong></p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        # Top performing suburbs
+        suburb_performance = historical_data.groupby('Property locality')['Purchase price'].mean().sort_values(ascending=False).head(3)
+        st.markdown(f"""
+        <div class="insight-box">
+            <h4>🏆 Top 3 Most Expensive Suburbs</h4>
+            <ol>
+                <li><strong>{suburb_performance.index[0]}</strong>: ${suburb_performance.iloc[0]:,.0f}</li>
+                <li><strong>{suburb_performance.index[1]}</strong>: ${suburb_performance.iloc[1]:,.0f}</li>
+                <li><strong>{suburb_performance.index[2]}</strong>: ${suburb_performance.iloc[2]:,.0f}</li>
+            </ol>
+        </div>
+        """, unsafe_allow_html=True)
+
+def show_price_analysis(historical_data):
+    """Show detailed price analysis"""
+    st.header("📈 Price Analysis")
+    
+    # Price trends over time
+    st.subheader("📊 Price Trends Over Time")
+    
+    # Monthly price trends
+    historical_data['Contract date'] = pd.to_datetime(historical_data['Contract date'])
+    monthly_prices = historical_data.groupby(historical_data['Contract date'].dt.to_period('M'))['Purchase price'].agg(['mean', 'median', 'count'])
+    monthly_prices.index = monthly_prices.index.astype(str)
+    
+    # Create price trend chart
+    fig = make_subplots(
+        rows=2, cols=1,
+        subplot_titles=('Average Price Over Time', 'Sales Volume Over Time'),
+        vertical_spacing=0.1
+    )
+    
+    fig.add_trace(
+        go.Scatter(x=monthly_prices.index, y=monthly_prices['mean'], 
+                  mode='lines+markers', name='Average Price', line=dict(color='blue')),
+        row=1, col=1
+    )
+    
+    fig.add_trace(
+        go.Scatter(x=monthly_prices.index, y=monthly_prices['median'], 
+                  mode='lines+markers', name='Median Price', line=dict(color='red')),
+        row=1, col=1
+    )
+    
+    fig.add_trace(
+        go.Bar(x=monthly_prices.index, y=monthly_prices['count'], 
+               name='Sales Volume', marker_color='green'),
+        row=2, col=1
+    )
+    
+    fig.update_layout(height=600, showlegend=True)
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Price distribution
+    st.subheader("📊 Price Distribution")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Price histogram
+        fig = px.histogram(
+            historical_data, 
+            x='Purchase price', 
+            nbins=30,
+            title="Price Distribution",
+            labels={'Purchase price': 'Price ($)', 'count': 'Number of Properties'}
+        )
+        fig.update_layout(showlegend=False)
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        # Price statistics
+        price_stats = historical_data['Purchase price'].describe()
+        st.write("**Price Statistics**")
+        st.write(f"- **Mean**: ${price_stats['mean']:,.0f}")
+        st.write(f"- **Median**: ${price_stats['50%']:,.0f}")
+        st.write(f"- **Min**: ${price_stats['min']:,.0f}")
+        st.write(f"- **Max**: ${price_stats['max']:,.0f}")
+        st.write(f"- **Std Dev**: ${price_stats['std']:,.0f}")
+        
+        # Price ranges
+        st.write("**Price Ranges**")
+        ranges = [
+            (0, 1000000, "Under $1M"),
+            (1000000, 2000000, "$1M - $2M"),
+            (2000000, 3000000, "$2M - $3M"),
+            (3000000, 5000000, "$3M - $5M"),
+            (5000000, float('inf'), "Over $5M")
+        ]
+        
+        for min_price, max_price, label in ranges:
+            if max_price == float('inf'):
+                count = len(historical_data[historical_data['Purchase price'] >= min_price])
+            else:
+                count = len(historical_data[(historical_data['Purchase price'] >= min_price) & (historical_data['Purchase price'] < max_price)])
+            percentage = (count / len(historical_data)) * 100
+            st.write(f"- **{label}**: {count:,} ({percentage:.1f}%)")
+
+def show_suburb_analysis(historical_data):
+    """Show suburb-specific analysis"""
+    st.header("🏘️ Suburb Analysis")
+    
+    # Suburb performance
+    st.subheader("🏆 Suburb Performance Rankings")
+    
+    # Get suburb statistics
+    suburb_stats = historical_data.groupby('Property locality')['Purchase price'].agg(['count', 'mean', 'median']).round(0)
+    suburb_stats.columns = ['Sales Count', 'Average Price', 'Median Price']
+    suburb_stats = suburb_stats.sort_values('Average Price', ascending=False)
+    
+    # Top 10 most expensive suburbs
+    st.write("**Top 10 Most Expensive Suburbs**")
+    top_10 = suburb_stats.head(10)
+    
+    fig = px.bar(
+        top_10, 
+        x='Average Price', 
+        y=top_10.index,
+        orientation='h',
+        title="Top 10 Most Expensive Suburbs",
+        labels={'Average Price': 'Average Price ($)', 'index': 'Suburb'}
+    )
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Display table
+    st.dataframe(top_10, use_container_width=True)
+    
+    # Suburb comparison
+    st.subheader("📊 Suburb Comparison")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Sales volume by suburb
+        suburb_volume = historical_data.groupby('Property locality').size().sort_values(ascending=False).head(10)
+        
+        fig = px.bar(
+            x=suburb_volume.values,
+            y=suburb_volume.index,
+            orientation='h',
+            title="Top 10 Suburbs by Sales Volume",
+            labels={'x': 'Number of Sales', 'y': 'Suburb'}
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        # Price vs volume scatter
+        suburb_summary = historical_data.groupby('Property locality').agg({
+            'Purchase price': ['mean', 'count']
+        }).round(0)
+        suburb_summary.columns = ['Average Price', 'Sales Count']
+        
+        fig = px.scatter(
+            suburb_summary,
+            x='Average Price',
+            y='Sales Count',
+            hover_data=suburb_summary.index,
+            title="Suburb Price vs Sales Volume",
+            labels={'Average Price': 'Average Price ($)', 'Sales Count': 'Number of Sales'}
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+def show_price_comparisons(historical_data, current_data):
+    """Show price comparison analysis"""
+    st.header("💰 Price Comparisons")
+    
+    # Overall comparison
+    st.subheader("📊 Overall Price Comparison")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Historical vs Current prices
+        hist_median = historical_data['Purchase price'].median()
+        current_median = current_data['price'].median()
+        
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            x=['Historical Sales', 'Current Listings'],
+            y=[hist_median, current_median],
+            text=[f"${hist_median:,.0f}", f"${current_median:,.0f}"],
+            textposition='auto',
+            marker_color=['blue', 'orange']
+        ))
+        fig.update_layout(
+            title="Median Price Comparison",
+            yaxis_title="Price ($)",
+            showlegend=False
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Calculate difference
+        difference = ((current_median - hist_median) / hist_median) * 100
+        st.metric(
+            label="Price Difference",
+            value=f"{difference:+.1f}%",
+            delta=f"{difference:+.1f}%"
+        )
+    
+    with col2:
+        # Price distribution comparison
+        fig = go.Figure()
+        
+        fig.add_trace(go.Histogram(
+            x=historical_data['Purchase price'],
+            name='Historical Sales',
+            opacity=0.7,
+            nbinsx=20
+        ))
+        
+        fig.add_trace(go.Histogram(
+            x=current_data['price'],
+            name='Current Listings',
+            opacity=0.7,
+            nbinsx=20
+        ))
+        
+        fig.update_layout(
+            title="Price Distribution Comparison",
+            xaxis_title="Price ($)",
+            yaxis_title="Count",
+            barmode='overlay'
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    
+    # Suburb-level comparison
+    st.subheader("🏘️ Suburb-Level Comparison")
+    
+    # Get matching suburbs
+    hist_suburbs = set(historical_data['Property locality'].unique())
+    current_suburbs = set(current_data['suburb'].unique())
+    matching_suburbs = hist_suburbs & current_suburbs
+    
+    if matching_suburbs:
+        comparison_data = []
+        for suburb in matching_suburbs:
+            hist_median = historical_data[historical_data['Property locality'] == suburb]['Purchase price'].median()
+            current_median = current_data[current_data['suburb'] == suburb]['price'].median()
+            difference = ((current_median - hist_median) / hist_median) * 100
+            
+            comparison_data.append({
+                'Suburb': suburb,
+                'Historical Median': hist_median,
+                'Current Median': current_median,
+                'Difference (%)': difference
+            })
+        
+        comparison_df = pd.DataFrame(comparison_data)
+        comparison_df = comparison_df.sort_values('Difference (%)', ascending=False)
+        
+        fig = px.bar(
+            comparison_df,
+            x='Suburb',
+            y='Difference (%)',
+            color='Difference (%)',
+            color_continuous_scale='RdYlGn',
+            title="Price Difference by Suburb",
+            labels={'Difference (%)': 'Price Difference (%)'}
+        )
+        fig.add_hline(y=0, line_dash="dash", line_color="black")
+        st.plotly_chart(fig, use_container_width=True)
+        
+        st.dataframe(comparison_df, use_container_width=True)
+    else:
+        st.info("No matching suburbs found between historical and current data")
+
+def show_data_explorer(historical_data, current_data):
+    """Show interactive data explorer"""
+    st.header("📋 Data Explorer")
+    
+    # Data selection
+    data_type = st.selectbox("Select data to explore:", ["Historical Sales", "Current Listings"])
+    
+    if data_type == "Historical Sales":
+        st.subheader("Historical Sales Data")
+        
+        # Filters
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            # Date range filter
+            min_date = historical_data['Contract date'].min()
+            max_date = historical_data['Contract date'].max()
+            
+            date_range = st.date_input(
+                "Select date range:",
+                value=(min_date, max_date),
+                min_value=min_date,
+                max_value=max_date
+            )
+        
+        with col2:
+            # Price range filter
+            min_price = historical_data['Purchase price'].min()
+            max_price = historical_data['Purchase price'].max()
+            
+            price_range = st.slider(
+                "Price range ($):",
+                min_value=float(min_price),
+                max_value=float(max_price),
+                value=(float(min_price), float(max_price))
+            )
+        
+        with col3:
+            # Suburb filter
+            suburbs = sorted(historical_data['Property locality'].unique())
+            selected_suburbs = st.multiselect(
+                "Select suburbs:",
+                options=suburbs,
+                default=suburbs[:3]
+            )
+        
+        # Apply filters
+        filtered_data = historical_data.copy()
+        
+        if len(date_range) == 2:
+            filtered_data = filtered_data[
+                (filtered_data['Contract date'] >= pd.Timestamp(date_range[0])) &
+                (filtered_data['Contract date'] <= pd.Timestamp(date_range[1]))
+            ]
+        
+        filtered_data = filtered_data[
+            (filtered_data['Purchase price'] >= price_range[0]) &
+            (filtered_data['Purchase price'] <= price_range[1])
+        ]
+        
+        if selected_suburbs:
+            filtered_data = filtered_data[filtered_data['Property locality'].isin(selected_suburbs)]
+        
+        # Display filtered data
+        st.write(f"**Showing {len(filtered_data):,} records**")
+        st.dataframe(filtered_data.head(100), use_container_width=True)  # Limit to first 100 rows
+        
+        # Download button
+        csv = filtered_data.to_csv(index=False)
+        st.download_button(
+            label="Download filtered data as CSV",
+            data=csv,
+            file_name=f"filtered_historical_data_{datetime.now().strftime('%Y%m%d')}.csv",
+            mime="text/csv"
+        )
+    
+    elif data_type == "Current Listings":
+        st.subheader("Current Listings Data")
+        
+        # Display current data
+        st.write(f"**Showing {len(current_data):,} records**")
+        st.dataframe(current_data, use_container_width=True)
+        
+        # Download button
+        csv = current_data.to_csv(index=False)
+        st.download_button(
+            label="Download current data as CSV",
+            data=csv,
+            file_name=f"current_data_{datetime.now().strftime('%Y%m%d')}.csv",
+            mime="text/csv"
+        )
+
+def main():
+    """Main Streamlit application"""
+    
+    # Header
+    st.markdown('<h1 class="main-header">🏠 Sydney Eastern Suburbs Property Analysis</h1>', unsafe_allow_html=True)
+    
+    # Sidebar
+    st.sidebar.title("Navigation")
+    page = st.sidebar.selectbox(
+        "Choose a page:",
+        ["📊 Dashboard", "📈 Price Analysis", "🏘️ Suburb Analysis", "💰 Price Comparisons", "📋 Data Explorer"]
+    )
+    
+    # Load data
+    with st.spinner("Loading property data..."):
+        historical_data, current_data = generate_sample_data()
+    
+    # Page routing
+    if page == "📊 Dashboard":
+        show_dashboard(historical_data, current_data)
+    elif page == "📈 Price Analysis":
+        show_price_analysis(historical_data)
+    elif page == "🏘️ Suburb Analysis":
+        show_suburb_analysis(historical_data)
+    elif page == "💰 Price Comparisons":
+        show_price_comparisons(historical_data, current_data)
+    elif page == "📋 Data Explorer":
+        show_data_explorer(historical_data, current_data)
+
+if __name__ == "__main__":
+    main()
