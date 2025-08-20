@@ -21,26 +21,81 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for better styling
+# Custom CSS for better styling - Theme-aware colors
 st.markdown("""
 <style>
     .main-header {
         font-size: 3rem;
-        color: #1f77b4;
+        color: var(--primary-color);
         text-align: center;
         margin-bottom: 2rem;
     }
     .metric-card {
-        background-color: #f0f2f6;
+        background-color: var(--background-color);
         padding: 1rem;
         border-radius: 0.5rem;
-        border-left: 4px solid #1f77b4;
+        border-left: 4px solid var(--primary-color);
+        border: 1px solid var(--border-color);
     }
     .insight-box {
-        background-color: #e8f4fd;
+        background-color: var(--background-color);
         padding: 1rem;
         border-radius: 0.5rem;
-        border-left: 4px solid #ff7f0e;
+        border-left: 4px solid var(--accent-color);
+        border: 1px solid var(--border-color);
+    }
+    .data-source-success {
+        background-color: rgba(0, 255, 0, 0.1);
+        padding: 0.5rem;
+        border-radius: 0.5rem;
+        border-left: 4px solid #00ff00;
+        margin-bottom: 1rem;
+    }
+    .data-source-warning {
+        background-color: rgba(255, 165, 0, 0.1);
+        padding: 0.5rem;
+        border-radius: 0.5rem;
+        border-left: 4px solid #ffa500;
+        margin-bottom: 1rem;
+    }
+    .suburb-list {
+        background-color: var(--background-color);
+        padding: 0.5rem;
+        border-radius: 0.5rem;
+        border: 1px solid var(--border-color);
+        margin-top: 0.5rem;
+    }
+    .price-highlight {
+        color: var(--primary-color);
+        font-weight: bold;
+    }
+    .growth-positive {
+        color: #00ff00;
+        font-weight: bold;
+    }
+    .growth-negative {
+        color: #ff4444;
+        font-weight: bold;
+    }
+    
+    /* Ensure charts work well in both themes */
+    .js-plotly-plot .plotly .main-svg {
+        background-color: transparent !important;
+    }
+    
+    /* Improve readability in dark mode */
+    @media (prefers-color-scheme: dark) {
+        .data-source-success {
+            background-color: rgba(0, 255, 0, 0.2);
+        }
+        .data-source-warning {
+            background-color: rgba(255, 165, 0, 0.2);
+        }
+    }
+    
+    /* Ensure text is readable in both themes */
+    .stMarkdown, .stText {
+        color: var(--text-color);
     }
 </style>
 """, unsafe_allow_html=True)
@@ -56,11 +111,41 @@ def load_property_data():
             st.success(f"✅ Loaded {len(current_data)} current properties from real data")
         else:
             # Fallback to sample data if real data not found
-            st.warning("⚠️ Real data not found, using sample data")
+            st.warning("⚠️ Real current data not found, using sample data")
             current_data = generate_sample_current_data()
         
-        # Generate historical data for comparison
-        historical_data = generate_sample_historical_data()
+        # Try to load real historical data
+        historical_file = os.path.join('data', 'extract-3-very-clean.csv')
+        if os.path.exists(historical_file):
+            try:
+                # Load only Eastern Suburbs data to keep it manageable
+                eastern_suburbs = ['Bondi', 'Coogee', 'Double Bay', 'Vaucluse', 'Bronte', 'Rose Bay', 'Bellevue Hill', 'Paddington', 'Woollahra', 'Bondi Junction', 'Waverley', 'Queens Park', 'Bondi Beach', 'North Bondi', 'Tamarama', 'Edgecliff', 'Dover Heights', 'Watsons Bay', 'Clovelly', 'South Coogee', 'Kensington', 'Maroubra', 'Maroubra South', 'Pagewood', 'Eastgardens', 'Chifley', 'Malabar', 'Little Bay', 'Phillip Bay']
+                
+                # Read the full dataset
+                full_historical = pd.read_csv(historical_file, low_memory=False)
+                
+                # Filter for Eastern Suburbs
+                historical_data = full_historical[full_historical['Property locality'].isin(eastern_suburbs)].copy()
+                
+                # Convert date column
+                historical_data['Contract date'] = pd.to_datetime(historical_data['Contract date'], errors='coerce')
+                
+                # Remove rows with invalid dates
+                historical_data = historical_data.dropna(subset=['Contract date'])
+                
+                # Filter for recent data (last 5 years to keep it manageable)
+                five_years_ago = pd.Timestamp.now() - pd.DateOffset(years=5)
+                historical_data = historical_data[historical_data['Contract date'] >= five_years_ago]
+                
+                st.success(f"✅ Loaded {len(historical_data):,} historical properties from real data (last 5 years)")
+                
+            except Exception as e:
+                st.warning(f"⚠️ Error loading historical data: {e}, using sample data")
+                historical_data = generate_sample_historical_data()
+        else:
+            # Fallback to sample data if real data not found
+            st.warning("⚠️ Real historical data not found, using sample data")
+            historical_data = generate_sample_historical_data()
         
         return {
             'historical_data': historical_data,
@@ -143,12 +228,41 @@ def show_dashboard(historical_data, current_data):
     """Show the main dashboard"""
     st.header("📊 Property Market Dashboard")
     
-    # Data source indicator
+    # Data source indicator with better styling
     current_file = os.path.join('src', 'data', 'current_property_data.csv')
-    if os.path.exists(current_file):
-        st.success(f"✅ **Real Data Loaded**: {len(current_data)} current properties from Eastern Suburbs extractor")
+    historical_file = os.path.join('data', 'extract-3-very-clean.csv')
+    
+    # Check if we're using real data
+    using_real_current = os.path.exists(current_file)
+    using_real_historical = os.path.exists(historical_file)
+    
+    if using_real_current and using_real_historical:
+        st.markdown(f"""
+        <div class="data-source-success">
+            <strong>✅ Real Data Loaded</strong><br>
+            {len(current_data)} current properties + {len(historical_data):,} historical properties (last 5 years)
+        </div>
+        """, unsafe_allow_html=True)
+    elif using_real_current:
+        st.markdown(f"""
+        <div class="data-source-success">
+            <strong>✅ Real Current Data</strong><br>
+            {len(current_data)} current properties from Eastern Suburbs extractor
+        </div>
+        """, unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="data-source-warning">
+            <strong>⚠️ Sample Historical Data</strong><br>
+            Using generated sample data for historical comparison
+        </div>
+        """, unsafe_allow_html=True)
     else:
-        st.warning("⚠️ **Sample Data**: Using generated sample data (run the extractor to get real data)")
+        st.markdown(f"""
+        <div class="data-source-warning">
+            <strong>⚠️ Sample Data</strong><br>
+            Using generated sample data (run the extractor to get real data)
+        </div>
+        """, unsafe_allow_html=True)
     
     # Key metrics
     col1, col2, col3, col4 = st.columns(4)
@@ -189,26 +303,40 @@ def show_dashboard(historical_data, current_data):
     col1, col2 = st.columns(2)
     
     with col1:
+        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
         st.write("**Historical Sales Data**")
         st.write(f"- **Records**: {len(historical_data):,}")
         st.write(f"- **Date Range**: {historical_data['Contract date'].min().strftime('%Y-%m-%d')} to {historical_data['Contract date'].max().strftime('%Y-%m-%d')}")
         st.write(f"- **Postcodes**: {historical_data['Property post code'].nunique()}")
         st.write(f"- **Suburbs**: {historical_data['Property locality'].nunique()}")
+        if using_real_historical:
+            st.write(f"- **Data Source**: Real NSW property data")
+        else:
+            st.write(f"- **Data Source**: Sample data")
+        st.markdown('</div>', unsafe_allow_html=True)
     
     with col2:
+        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
         st.write("**Current Listings Data**")
         st.write(f"- **Records**: {len(current_data):,}")
         st.write(f"- **Postcodes**: {current_data['postcode'].nunique()}")
         st.write(f"- **Suburbs**: {current_data['suburb'].nunique()}")
         if 'Area' in current_data.columns:
             st.write(f"- **With Area Data**: {current_data['Area'].notna().sum()}")
+        if using_real_current:
+            st.write(f"- **Data Source**: Real Eastern Suburbs extractor")
+        else:
+            st.write(f"- **Data Source**: Sample data")
         
         # Show top suburbs by property count
         if len(current_data) > 0:
             suburb_counts = current_data['suburb'].value_counts().head(5)
+            st.markdown('<div class="suburb-list">', unsafe_allow_html=True)
             st.write("**Top 5 Suburbs by Listings:**")
             for suburb, count in suburb_counts.items():
                 st.write(f"- {suburb}: {count} properties")
+            st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
     
     # Market insights
     st.subheader("💡 Market Insights")
@@ -221,12 +349,14 @@ def show_dashboard(historical_data, current_data):
     col1, col2 = st.columns(2)
     
     with col1:
+        growth_class = "growth-positive" if growth >= 0 else "growth-negative"
+        growth_sign = "+" if growth >= 0 else ""
         st.markdown(f"""
         <div class="insight-box">
             <h4>📈 Price Growth Trend</h4>
-            <p>Historical median: <strong>${hist_median:,.0f}</strong></p>
-            <p>Current median: <strong>${current_median:,.0f}</strong></p>
-            <p>Growth: <strong>{growth:+.1f}%</strong></p>
+            <p>Historical median: <span class="price-highlight">${hist_median:,.0f}</span></p>
+            <p>Current median: <span class="price-highlight">${current_median:,.0f}</span></p>
+            <p>Growth: <span class="{growth_class}">{growth_sign}{growth:.1f}%</span></p>
         </div>
         """, unsafe_allow_html=True)
     
@@ -237,9 +367,9 @@ def show_dashboard(historical_data, current_data):
         <div class="insight-box">
             <h4>🏆 Top 3 Most Expensive Suburbs</h4>
             <ol>
-                <li><strong>{suburb_performance.index[0]}</strong>: ${suburb_performance.iloc[0]:,.0f}</li>
-                <li><strong>{suburb_performance.index[1]}</strong>: ${suburb_performance.iloc[1]:,.0f}</li>
-                <li><strong>{suburb_performance.index[2]}</strong>: ${suburb_performance.iloc[2]:,.0f}</li>
+                <li><strong>{suburb_performance.index[0]}</strong>: <span class="price-highlight">${suburb_performance.iloc[0]:,.0f}</span></li>
+                <li><strong>{suburb_performance.index[1]}</strong>: <span class="price-highlight">${suburb_performance.iloc[1]:,.0f}</span></li>
+                <li><strong>{suburb_performance.index[2]}</strong>: <span class="price-highlight">${suburb_performance.iloc[2]:,.0f}</span></li>
             </ol>
         </div>
         """, unsafe_allow_html=True)
@@ -597,6 +727,21 @@ def main():
     
     # Sidebar
     st.sidebar.title("Navigation")
+    
+    # Theme toggle for testing
+    st.sidebar.subheader("🎨 Theme")
+    theme_mode = st.sidebar.selectbox(
+        "Choose theme:",
+        ["Light", "Dark"],
+        help="Toggle between light and dark themes"
+    )
+    
+    # Apply theme (this is just for display - actual theme is controlled by Streamlit settings)
+    if theme_mode == "Dark":
+        st.sidebar.info("💡 Switch to dark mode in Streamlit settings (☰ menu)")
+    else:
+        st.sidebar.info("💡 Switch to light mode in Streamlit settings (☰ menu)")
+    
     page = st.sidebar.selectbox(
         "Choose a page:",
         ["📊 Dashboard", "📈 Price Analysis", "🏘️ Suburb Analysis", "💰 Price Comparisons", "📋 Data Explorer"]
@@ -610,10 +755,35 @@ def main():
     
     # Show data source info
     current_file = os.path.join('src', 'data', 'current_property_data.csv')
-    if os.path.exists(current_file):
-        st.sidebar.success(f"📊 Using Real Data: {len(current_data)} properties")
+    historical_file = os.path.join('data', 'extract-3-very-clean.csv')
+    
+    if os.path.exists(current_file) and os.path.exists(historical_file):
+        st.sidebar.markdown(f"""
+        <div class="data-source-success">
+            <strong>📊 Real Data</strong><br>
+            {len(current_data)} current + {len(historical_data):,} historical
+        </div>
+        """, unsafe_allow_html=True)
+    elif os.path.exists(current_file):
+        st.sidebar.markdown(f"""
+        <div class="data-source-success">
+            <strong>📊 Real Current</strong><br>
+            {len(current_data)} properties
+        </div>
+        """, unsafe_allow_html=True)
+        st.sidebar.markdown(f"""
+        <div class="data-source-warning">
+            <strong>📊 Sample Historical</strong><br>
+            Demo mode
+        </div>
+        """, unsafe_allow_html=True)
     else:
-        st.sidebar.warning("📊 Using Sample Data")
+        st.sidebar.markdown(f"""
+        <div class="data-source-warning">
+            <strong>📊 Sample Data</strong><br>
+            Demo mode
+        </div>
+        """, unsafe_allow_html=True)
     
     # Page routing
     if page == "📊 Dashboard":
