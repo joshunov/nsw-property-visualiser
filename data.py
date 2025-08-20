@@ -90,7 +90,7 @@ class DataLoader:
         }
     
     def _generate_sample_current_data(self) -> pd.DataFrame:
-        """Generate sample current property data"""
+        """Generate sample current property data with full details"""
         suburbs_data = {
             'Bondi': {'postcode': '2026', 'avg_price': 2500000, 'price_range': 500000},
             'Coogee': {'postcode': '2031', 'avg_price': 2200000, 'price_range': 400000},
@@ -102,9 +102,12 @@ class DataLoader:
             'Paddington': {'postcode': '2021', 'avg_price': 2000000, 'price_range': 400000}
         }
         
+        property_types = ['House', 'Unit/Apartment', 'Townhouse', 'Villa']
+        street_names = ['Ocean St', 'Beach Rd', 'Park Ave', 'Hill St', 'Garden Way', 'Bay View Dr', 'Harbour St']
+        
         current_data = []
         for suburb, info in suburbs_data.items():
-            for _ in range(np.random.randint(2, 5)):
+            for i in range(np.random.randint(3, 6)):
                 base_price = info['avg_price'] * 1.1
                 price_variation = np.random.normal(0, info['price_range'] * 0.2)
                 price = max(500000, base_price + price_variation)
@@ -112,11 +115,34 @@ class DataLoader:
                 area = np.random.normal(200, 50)
                 area = max(50, min(500, area))
                 
+                bedrooms = np.random.randint(1, 6)
+                bathrooms = np.random.randint(1, min(bedrooms + 1, 4))
+                parking = np.random.randint(0, 3)
+                property_type = np.random.choice(property_types)
+                street_name = np.random.choice(street_names)
+                street_number = np.random.randint(1, 200)
+                
+                address = f"{street_number} {street_name}, {suburb} NSW {info['postcode']}"
+                
                 current_data.append({
-                    'price': int(price),
-                    'postcode': info['postcode'],
+                    'address': address,
                     'suburb': suburb,
-                    'Area': int(area)
+                    'state': 'NSW',
+                    'postcode': info['postcode'],
+                    'price': int(price),
+                    'price_display': f"${price:,.0f}",
+                    'bedrooms': bedrooms,
+                    'bathrooms': bathrooms,
+                    'parking': parking,
+                    'square_meters': int(area),
+                    'property_type': property_type,
+                    'listing_date': pd.Timestamp.now().strftime('%Y-%m-%d'),
+                    'source': 'sample_data',
+                    'data_type': 'for_sale',
+                    'Area': int(area),
+                    'Property locality': suburb,
+                    'Property street name': f"{street_number} {street_name}",
+                    'Property post code': info['postcode']
                 })
         
         return pd.DataFrame(current_data)
@@ -264,3 +290,110 @@ class DataProcessor:
     def get_top_suburbs_by_listings(self, top_n: int = 5) -> pd.Series:
         """Get top suburbs by number of current listings"""
         return self.current_data['suburb'].value_counts().head(top_n)
+    
+    def get_property_insights(self, property_data: pd.Series) -> Dict:
+        """Get insights for a specific property compared to historical data"""
+        suburb = property_data.get('suburb', property_data.get('Property locality', ''))
+        price = property_data.get('price', property_data.get('Purchase price', 0))
+        area = property_data.get('Area', property_data.get('square_meters', 0))
+        
+        # Get historical data for the same suburb
+        suburb_historical = self.historical_data[
+            self.historical_data['Property locality'] == suburb
+        ]
+        
+        insights = {
+            'suburb_avg_price': 0,
+            'suburb_median_price': 0,
+            'price_percentile': 0,
+            'price_vs_avg': 0,
+            'area_comparison': 'Unknown',
+            'suburb_sales_count': 0,
+            'price_trend': 'Unknown'
+        }
+        
+        if not suburb_historical.empty:
+            insights['suburb_avg_price'] = suburb_historical['Purchase price'].mean()
+            insights['suburb_median_price'] = suburb_historical['Purchase price'].median()
+            insights['suburb_sales_count'] = len(suburb_historical)
+            
+            # Calculate price percentile
+            if price > 0:
+                percentile = (suburb_historical['Purchase price'] < price).mean() * 100
+                insights['price_percentile'] = percentile
+                insights['price_vs_avg'] = ((price - insights['suburb_avg_price']) / insights['suburb_avg_price']) * 100
+            
+            # Area comparison
+            if area > 0 and 'Area' in suburb_historical.columns:
+                avg_area = suburb_historical['Area'].mean()
+                if not pd.isna(avg_area) and avg_area > 0:
+                    area_diff = ((area - avg_area) / avg_area) * 100
+                    if area_diff > 10:
+                        insights['area_comparison'] = f"Larger than average (+{area_diff:.1f}%)"
+                    elif area_diff < -10:
+                        insights['area_comparison'] = f"Smaller than average ({area_diff:.1f}%)"
+                    else:
+                        insights['area_comparison'] = "Average size"
+            
+            # Price trend (last 2 years vs earlier)
+            if len(suburb_historical) > 10:
+                suburb_historical_sorted = suburb_historical.sort_values('Contract date')
+                recent_date = suburb_historical_sorted['Contract date'].max()
+                cutoff_date = recent_date - pd.DateOffset(years=2)
+                
+                recent_prices = suburb_historical_sorted[
+                    suburb_historical_sorted['Contract date'] >= cutoff_date
+                ]['Purchase price']
+                
+                older_prices = suburb_historical_sorted[
+                    suburb_historical_sorted['Contract date'] < cutoff_date
+                ]['Purchase price']
+                
+                if len(recent_prices) > 0 and len(older_prices) > 0:
+                    recent_avg = recent_prices.mean()
+                    older_avg = older_prices.mean()
+                    trend_pct = ((recent_avg - older_avg) / older_avg) * 100
+                    
+                    if trend_pct > 5:
+                        insights['price_trend'] = f"Rising (+{trend_pct:.1f}%)"
+                    elif trend_pct < -5:
+                        insights['price_trend'] = f"Declining ({trend_pct:.1f}%)"
+                    else:
+                        insights['price_trend'] = "Stable"
+        
+        return insights
+    
+    def get_similar_properties(self, property_data: pd.Series, limit: int = 5) -> pd.DataFrame:
+        """Find similar properties in historical data"""
+        suburb = property_data.get('suburb', property_data.get('Property locality', ''))
+        price = property_data.get('price', property_data.get('Purchase price', 0))
+        area = property_data.get('Area', property_data.get('square_meters', 0))
+        
+        # Filter historical data for same suburb
+        suburb_data = self.historical_data[
+            self.historical_data['Property locality'] == suburb
+        ].copy()
+        
+        if suburb_data.empty:
+            return pd.DataFrame()
+        
+        # Calculate similarity score based on price and area
+        if price > 0:
+            suburb_data['price_diff'] = abs(suburb_data['Purchase price'] - price) / price
+        else:
+            suburb_data['price_diff'] = 1.0
+            
+        if area > 0 and 'Area' in suburb_data.columns:
+            suburb_data['area_diff'] = abs(suburb_data['Area'].fillna(area) - area) / area
+        else:
+            suburb_data['area_diff'] = 0.0
+        
+        # Combined similarity score (lower is better)
+        suburb_data['similarity_score'] = suburb_data['price_diff'] + (suburb_data['area_diff'] * 0.5)
+        
+        # Return most similar properties
+        similar = suburb_data.nsmallest(limit, 'similarity_score')[
+            ['Contract date', 'Purchase price', 'Area', 'Property post code', 'similarity_score']
+        ].copy()
+        
+        return similar

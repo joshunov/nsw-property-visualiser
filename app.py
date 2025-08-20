@@ -354,6 +354,181 @@ def show_price_comparisons(data_processor: DataProcessor):
         st.info("No matching suburbs found between historical and current data")
 
 
+def show_property_details(data_processor: DataProcessor):
+    """Display detailed property information with insights"""
+    st.header("🏠 Property Details & Insights")
+    
+    # Filter controls
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        # Suburb filter
+        available_suburbs = sorted(data_processor.current_data['suburb'].unique())
+        selected_suburb = st.selectbox(
+            "Filter by suburb:",
+            options=['All Suburbs'] + available_suburbs,
+            index=0
+        )
+    
+    with col2:
+        # Property type filter
+        if 'property_type' in data_processor.current_data.columns:
+            property_types = sorted(data_processor.current_data['property_type'].unique())
+            selected_type = st.selectbox(
+                "Filter by property type:",
+                options=['All Types'] + property_types,
+                index=0
+            )
+        else:
+            selected_type = 'All Types'
+    
+    with col3:
+        # Price range filter
+        max_price = data_processor.current_data['price'].max()
+        min_price = data_processor.current_data['price'].min()
+        price_range = st.slider(
+            "Price range:",
+            min_value=int(min_price),
+            max_value=int(max_price),
+            value=(int(min_price), int(max_price)),
+            format="$%d"
+        )
+    
+    # Apply filters
+    filtered_data = data_processor.current_data.copy()
+    
+    if selected_suburb != 'All Suburbs':
+        filtered_data = filtered_data[filtered_data['suburb'] == selected_suburb]
+    
+    if selected_type != 'All Types' and 'property_type' in filtered_data.columns:
+        filtered_data = filtered_data[filtered_data['property_type'] == selected_type]
+    
+    filtered_data = filtered_data[
+        (filtered_data['price'] >= price_range[0]) & 
+        (filtered_data['price'] <= price_range[1])
+    ]
+    
+    st.write(f"**Showing {len(filtered_data)} properties**")
+    
+    if filtered_data.empty:
+        st.warning("No properties match your filter criteria.")
+        return
+    
+    # Property cards
+    for idx, property_row in filtered_data.iterrows():
+        # Format the property display text
+        address = property_row.get('address', 'Address not available')
+        price_display = property_row.get('price_display', f"${property_row['price']:,.0f}")
+        
+        with st.expander(f"🏠 {address} - {price_display}"):
+            
+            # Property details section
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+                st.subheader("🏠 Property Details")
+                
+                # Basic info
+                st.write(f"**Address:** {property_row.get('address', 'Not available')}")
+                st.write(f"**Suburb:** {property_row.get('suburb', 'Not available')}")
+                price_text = property_row.get('price_display', f"${property_row['price']:,.0f}")
+                st.write(f"**Price:** {price_text}")
+                
+                if 'property_type' in property_row:
+                    st.write(f"**Type:** {property_row['property_type']}")
+                
+                if 'bedrooms' in property_row:
+                    st.write(f"**Bedrooms:** {property_row['bedrooms']}")
+                
+                if 'bathrooms' in property_row:
+                    st.write(f"**Bathrooms:** {property_row['bathrooms']}")
+                
+                if 'parking' in property_row:
+                    st.write(f"**Parking:** {property_row['parking']}")
+                
+                if 'Area' in property_row or 'square_meters' in property_row:
+                    area = property_row.get('Area', property_row.get('square_meters', 0))
+                    if area > 0:
+                        st.write(f"**Area:** {area:.0f} m²")
+                        price_per_sqm = property_row['price'] / area
+                        st.write(f"**Price per m²:** ${price_per_sqm:,.0f}")
+                
+                if 'listing_date' in property_row:
+                    st.write(f"**Listed:** {property_row['listing_date']}")
+                
+                st.markdown('</div>', unsafe_allow_html=True)
+            
+            with col2:
+                # Market insights
+                st.markdown('<div class="insight-box">', unsafe_allow_html=True)
+                st.subheader("📊 Market Insights")
+                
+                insights = data_processor.get_property_insights(property_row)
+                
+                if insights['suburb_sales_count'] > 0:
+                    st.write(f"**Suburb Avg Price:** ${insights['suburb_avg_price']:,.0f}")
+                    st.write(f"**Suburb Median:** ${insights['suburb_median_price']:,.0f}")
+                    
+                    # Price comparison
+                    if insights['price_vs_avg'] > 10:
+                        price_indicator = "🔴 Above Average"
+                        price_class = "growth-negative"
+                    elif insights['price_vs_avg'] < -10:
+                        price_indicator = "🟢 Below Average"
+                        price_class = "growth-positive"
+                    else:
+                        price_indicator = "🟡 Average"
+                        price_class = ""
+                    
+                    st.markdown(f"**Price vs Average:** <span class='{price_class}'>{insights['price_vs_avg']:+.1f}%</span> {price_indicator}", unsafe_allow_html=True)
+                    
+                    # Percentile
+                    if insights['price_percentile'] > 0:
+                        st.write(f"**Price Percentile:** {insights['price_percentile']:.0f}th percentile")
+                    
+                    # Area comparison
+                    if insights['area_comparison'] != 'Unknown':
+                        st.write(f"**Size:** {insights['area_comparison']}")
+                    
+                    # Price trend
+                    if insights['price_trend'] != 'Unknown':
+                        if 'Rising' in insights['price_trend']:
+                            trend_class = "growth-positive"
+                            trend_icon = "📈"
+                        elif 'Declining' in insights['price_trend']:
+                            trend_class = "growth-negative" 
+                            trend_icon = "📉"
+                        else:
+                            trend_class = ""
+                            trend_icon = "📊"
+                        
+                        st.markdown(f"**Market Trend:** <span class='{trend_class}'>{insights['price_trend']}</span> {trend_icon}", unsafe_allow_html=True)
+                    
+                    st.write(f"**Historical Sales:** {insights['suburb_sales_count']} in last 5 years")
+                else:
+                    st.write("No historical data available for this suburb")
+                
+                st.markdown('</div>', unsafe_allow_html=True)
+            
+            # Similar properties section
+            st.subheader("🔍 Similar Properties Sold Recently")
+            similar_props = data_processor.get_similar_properties(property_row, limit=3)
+            
+            if not similar_props.empty:
+                # Clean up the similar properties display
+                display_similar = similar_props.copy()
+                display_similar['Contract date'] = pd.to_datetime(display_similar['Contract date']).dt.strftime('%Y-%m-%d')
+                display_similar['Purchase price'] = display_similar['Purchase price'].apply(lambda x: f"${x:,.0f}")
+                display_similar['Area'] = display_similar['Area'].apply(lambda x: f"{x:.0f} m²" if pd.notna(x) else "N/A")
+                display_similar = display_similar.drop('similarity_score', axis=1)
+                display_similar.columns = ['Sale Date', 'Sale Price', 'Area', 'Postcode']
+                
+                st.dataframe(display_similar, use_container_width=True, hide_index=True)
+            else:
+                st.info("No similar properties found in historical data")
+
+
 def show_data_explorer(data_processor: DataProcessor):
     """Display interactive data explorer"""
     st.header("📋 Data Explorer")
@@ -471,7 +646,7 @@ def main():
     
     page = st.sidebar.selectbox(
         "Choose a page:",
-        ["📊 Dashboard", "📈 Price Analysis", "🏘️ Suburb Analysis", "💰 Price Comparisons", "📋 Data Explorer"]
+        ["📊 Dashboard", "📈 Price Analysis", "🏘️ Suburb Analysis", "💰 Price Comparisons", "🏠 Property Details", "📋 Data Explorer"]
     )
     
     # Load data
@@ -507,6 +682,8 @@ def main():
         show_suburb_analysis(data_processor)
     elif page == "💰 Price Comparisons":
         show_price_comparisons(data_processor)
+    elif page == "🏠 Property Details":
+        show_property_details(data_processor)
     elif page == "📋 Data Explorer":
         show_data_explorer(data_processor)
 

@@ -3,6 +3,8 @@ Configuration settings for the Property Analysis Application
 """
 
 import os
+import pandas as pd
+import numpy as np
 from pathlib import Path
 
 # Project paths
