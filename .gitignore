@@ -51,6 +51,10 @@ eastern_suburbs_analysis/
 src/data/
 src/analysis/eastern_suburbs_analysis/
 
+# Cache files
+src/cache/
+*.pkl
+
 # Test files
 test_*.py
 *_test.py

@@ -5,3 +5,5 @@ numpy
 matplotlib
 requests
 beautifulsoup4
+flask
+openai

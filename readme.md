@@ -7,6 +7,8 @@ A comprehensive property market analysis tool for NSW, Australia. This tool down
 ```
 Property_project/
 ├── main.py                          # Main orchestration script
+├── run_chatbot.py                   # AI Chatbot runner
+├── test_chatbot.py                  # Chatbot test suite
 ├── requirements.txt                 # Python dependencies
 ├── README.md                       # This file
 ├── src/                            # Source code
@@ -18,12 +20,19 @@ Property_project/
 │   ├── analysis/                   # Analysis modules
 │   │   ├── __init__.py
 │   │   └── property_analyzer.py
+│   ├── chatbot/                    # AI Chatbot modules
+│   │   ├── __init__.py
+│   │   ├── property_chatbot.py     # Main chatbot logic
+│   │   ├── web_interface.py        # Web interface
+│   │   └── templates/              # HTML templates
+│   │       └── chatbot.html        # Chat interface
 │   └── utils/                      # Utility modules
 │       └── __init__.py
 ├── data/                           # Data storage
 ├── logs/                           # Log files
 └── docs/                           # Documentation
     ├── README_REFACTORED.md       # Detailed documentation
+    ├── CHATBOT_README.md          # Chatbot documentation
     └── Valuer General documentation/
 ```
 
@@ -62,6 +71,9 @@ python src/extractors/current_property_extractor.py
 
 # Property analysis
 python src/analysis/property_analyzer.py
+
+# AI Chatbot
+python run_chatbot.py
 ```
 
 ## 📊 Features
@@ -85,6 +97,15 @@ python src/analysis/property_analyzer.py
 - ✅ Market timing recommendations
 - ✅ Visualization generation
 
+### 🤖 AI Chatbot Interface
+- ✅ Natural language query processing
+- ✅ Property price analysis and comparisons
+- ✅ Suburb comparison functionality
+- ✅ Market trend analysis
+- ✅ Web interface with real-time chat
+- ✅ Command-line interface
+- ✅ RESTful API endpoints
+
 ## 📁 Output Files
 
 ### Data Files (in `data/` directory)
@@ -98,6 +119,35 @@ python src/analysis/property_analyzer.py
 - `current_extraction.log`: Current data extraction logs
 - `property_analysis.log`: Analysis execution logs
 - `property_visualiser_YYYYMMDD_HHMMSS.log`: Main pipeline logs
+- `property_chatbot.log`: Chatbot interaction logs
+
+## 🤖 AI Chatbot Usage
+
+### Quick Start
+```bash
+# Start the chatbot
+python run_chatbot.py
+
+# Or start the web interface directly
+python src/chatbot/web_interface.py
+```
+
+### Example Queries
+- "What's the average price in Bondi?"
+- "Compare Bondi vs Coogee prices"
+- "Show me properties in Paddington under $2M"
+- "What's the price trend in Eastern Suburbs?"
+- "Find 3-bedroom properties in Vaucluse"
+
+### Features
+- **Natural Language Processing**: Ask questions in plain English
+- **Price Analysis**: Get average, median, and price ranges
+- **Suburb Comparisons**: Compare property prices between suburbs
+- **Market Trends**: Analyze price growth and market changes
+- **Web Interface**: Modern chat interface at http://localhost:5000
+- **API Access**: RESTful endpoints for integration
+
+For detailed chatbot documentation, see [docs/CHATBOT_README.md](docs/CHATBOT_README.md)
 
 ## 🔧 Configuration
 

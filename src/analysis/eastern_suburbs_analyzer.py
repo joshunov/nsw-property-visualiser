@@ -390,6 +390,12 @@ class EasternSuburbsAnalyzer:
         self.create_visualizations()
         self.generate_market_insights()
         
+        # Run price per square meter comparison
+        self.compare_current_vs_historical_price_per_sqm()
+        
+        # Run general price comparison (works with any data)
+        self.compare_current_vs_historical_prices()
+        
         print(f"\n✅ Analysis complete! Results saved to {self.output_dir}/")
         print(f"📊 Generated files:")
         print(f"   - postcode_analysis.csv")
@@ -397,6 +403,359 @@ class EasternSuburbsAnalyzer:
         print(f"   - price_distribution_by_postcode.png")
         print(f"   - average_prices_by_postcode.png")
         print(f"   - sales_volume_by_postcode.png")
+        print(f"   - price_per_sqm_comparison.csv")
+        print(f"   - price_per_sqm_comparison.png")
+        print(f"   - price_comparison.csv")
+
+    def compare_current_vs_historical_price_per_sqm(self):
+        """Comprehensive comparison of current listings vs historical sales price per square meter"""
+        print("\n=== CURRENT vs HISTORICAL PRICE PER SQUARE METER COMPARISON ===")
+        
+        # Check if we have both current and historical data
+        if self.current_df.empty:
+            print("❌ No current listings data available for comparison")
+            return None
+            
+        if self.historical_df.empty:
+            print("❌ No historical sales data available for comparison")
+            return None
+            
+        # Prepare historical data
+        historical_data = self.historical_df.copy()
+        historical_data['Contract date'] = pd.to_datetime(historical_data['Contract date'], errors='coerce')
+        
+        # Check if Area data is available in historical data
+        if 'Area' not in historical_data.columns:
+            print("ℹ️  No Area data available in historical dataset - skipping square meter comparison")
+            return None
+            
+        # Filter for properties with valid area data
+        historical_area_data = historical_data.dropna(subset=['Area', 'Purchase price'])
+        historical_area_data = historical_area_data[historical_area_data['Area'] > 0]
+        historical_area_data = historical_area_data[historical_area_data['Purchase price'] > 0]
+        
+        if len(historical_area_data) == 0:
+            print("ℹ️  No historical data with valid area information available")
+            return None
+            
+        # Calculate historical price per sqm
+        historical_area_data['Price_per_sqm'] = historical_area_data['Purchase price'] / historical_area_data['Area']
+        
+        # Prepare current data
+        current_data = self.current_df.copy()
+        
+        # Check if Area data is available in current data
+        if 'Area' not in current_data.columns:
+            print("ℹ️  No Area data available in current dataset - skipping square meter comparison")
+            return None
+            
+        current_area_data = current_data.dropna(subset=['Area', 'price'])
+        current_area_data = current_area_data[current_area_data['Area'] > 0]
+        current_area_data = current_area_data[current_area_data['price'] > 0]
+        
+        if len(current_area_data) == 0:
+            print("ℹ️  No current listings with valid area information available")
+            return None
+            
+        # Calculate current price per sqm
+        current_area_data['Price_per_sqm'] = current_area_data['price'] / current_area_data['Area']
+        
+        print(f"📊 Data Summary:")
+        print(f"   Historical sales with area data: {len(historical_area_data):,}")
+        print(f"   Current listings with area data: {len(current_area_data):,}")
+        
+        # Overall comparison
+        historical_median = historical_area_data['Price_per_sqm'].median()
+        current_median = current_area_data['Price_per_sqm'].median()
+        historical_mean = historical_area_data['Price_per_sqm'].mean()
+        current_mean = current_area_data['Price_per_sqm'].mean()
+        
+        print(f"\n💰 OVERALL PRICE PER SQUARE METER COMPARISON:")
+        print(f"   Historical Sales (Median): ${historical_median:,.0f}/sqm")
+        print(f"   Current Listings (Median): ${current_median:,.0f}/sqm")
+        print(f"   Difference: {((current_median - historical_median) / historical_median * 100):+.1f}%")
+        
+        print(f"\n   Historical Sales (Mean): ${historical_mean:,.0f}/sqm")
+        print(f"   Current Listings (Mean): ${current_mean:,.0f}/sqm")
+        print(f"   Difference: {((current_mean - historical_mean) / historical_mean * 100):+.1f}%")
+        
+        # Recent historical comparison (last 2 years)
+        two_years_ago = datetime.now() - pd.DateOffset(years=2)
+        recent_historical = historical_area_data[historical_area_data['Contract date'] >= two_years_ago]
+        
+        if len(recent_historical) > 0:
+            recent_median = recent_historical['Price_per_sqm'].median()
+            recent_mean = recent_historical['Price_per_sqm'].mean()
+            
+            print(f"\n📈 RECENT SALES COMPARISON (Last 2 Years):")
+            print(f"   Recent Sales (Median): ${recent_median:,.0f}/sqm")
+            print(f"   Current Listings (Median): ${current_median:,.0f}/sqm")
+            print(f"   Difference: {((current_median - recent_median) / recent_median * 100):+.1f}%")
+            
+            print(f"\n   Recent Sales (Mean): ${recent_mean:,.0f}/sqm")
+            print(f"   Current Listings (Mean): ${current_mean:,.0f}/sqm")
+            print(f"   Difference: {((current_mean - recent_mean) / recent_mean * 100):+.1f}%")
+        
+        # Comparison by postcode
+        print(f"\n🏘️ PRICE PER SQUARE METER BY POSTCODE:")
+        
+        comparison_data = []
+        
+        # Get unique postcodes from both datasets and ensure they're strings
+        hist_postcodes = set(historical_area_data['Property post code'].astype(str).unique())
+        current_postcodes = set(current_area_data['postcode'].astype(str).unique())
+        all_postcodes = hist_postcodes | current_postcodes
+        
+        for postcode in sorted(all_postcodes):
+            # Historical data for this postcode
+            hist_postcode_data = historical_area_data[historical_area_data['Property post code'] == str(postcode)]
+            current_postcode_data = current_area_data[current_area_data['postcode'] == str(postcode)]
+            
+            if len(hist_postcode_data) > 0 and len(current_postcode_data) > 0:
+                hist_median = hist_postcode_data['Price_per_sqm'].median()
+                current_median = current_postcode_data['Price_per_sqm'].median()
+                difference_pct = ((current_median - hist_median) / hist_median * 100)
+                
+                # Get suburb name
+                suburb = current_postcode_data['suburb'].iloc[0] if len(current_postcode_data) > 0 else "Unknown"
+                
+                print(f"   {suburb} ({postcode}):")
+                print(f"     Historical: ${hist_median:,.0f}/sqm ({len(hist_postcode_data)} sales)")
+                print(f"     Current: ${current_median:,.0f}/sqm ({len(current_postcode_data)} listings)")
+                print(f"     Difference: {difference_pct:+.1f}%")
+                
+                comparison_data.append({
+                    'postcode': postcode,
+                    'suburb': suburb,
+                    'historical_median_price_per_sqm': hist_median,
+                    'current_median_price_per_sqm': current_median,
+                    'difference_percentage': difference_pct,
+                    'historical_sales_count': len(hist_postcode_data),
+                    'current_listings_count': len(current_postcode_data)
+                })
+        
+        # Save comparison data
+        if comparison_data:
+            comparison_df = pd.DataFrame(comparison_data)
+            comparison_df = comparison_df.sort_values('difference_percentage', ascending=False)
+            comparison_file = os.path.join(self.output_dir, "price_per_sqm_comparison.csv")
+            comparison_df.to_csv(comparison_file, index=False)
+            
+            print(f"\n📊 COMPARISON SUMMARY:")
+            print(f"   Postcodes with current listings: {len(comparison_data)}")
+            print(f"   Average difference: {comparison_df['difference_percentage'].mean():+.1f}%")
+            print(f"   Median difference: {comparison_df['difference_percentage'].median():+.1f}%")
+            
+            # Market insights
+            positive_diff = comparison_df[comparison_df['difference_percentage'] > 0]
+            negative_diff = comparison_df[comparison_df['difference_percentage'] < 0]
+            
+            print(f"\n💡 MARKET INSIGHTS:")
+            print(f"   Postcodes where current listings > historical sales: {len(positive_diff)}")
+            print(f"   Postcodes where current listings < historical sales: {len(negative_diff)}")
+            
+            if len(positive_diff) > 0:
+                top_overvalued = positive_diff.head(3)
+                print(f"\n   📈 Top 3 'Overvalued' Postcodes (Current > Historical):")
+                for _, row in top_overvalued.iterrows():
+                    print(f"     {row['suburb']} ({row['postcode']}): +{row['difference_percentage']:.1f}%")
+            
+            if len(negative_diff) > 0:
+                top_undervalued = negative_diff.head(3)
+                print(f"\n   📉 Top 3 'Undervalued' Postcodes (Current < Historical):")
+                for _, row in top_undervalued.iterrows():
+                    print(f"     {row['suburb']} ({row['postcode']}): {row['difference_percentage']:.1f}%")
+            
+            # Create visualization
+            self._create_price_per_sqm_comparison_chart(comparison_df)
+            
+            return comparison_df
+        
+        return None
+    
+    def _create_price_per_sqm_comparison_chart(self, comparison_df):
+        """Create visualization for price per square meter comparison"""
+        try:
+            plt.figure(figsize=(14, 8))
+            
+            # Create bar chart
+            x = range(len(comparison_df))
+            bars = plt.bar(x, comparison_df['difference_percentage'], 
+                          color=['red' if x < 0 else 'green' for x in comparison_df['difference_percentage']])
+            
+            plt.xlabel('Postcode')
+            plt.ylabel('Difference (%)')
+            plt.title('Current Listings vs Historical Sales: Price per Square Meter Comparison')
+            plt.xticks(x, [f"{row['suburb']}\n({row['postcode']})" for _, row in comparison_df.iterrows()], rotation=45, ha='right')
+            
+            # Add horizontal line at 0
+            plt.axhline(y=0, color='black', linestyle='-', alpha=0.3)
+            
+            # Add value labels on bars
+            for i, bar in enumerate(bars):
+                height = bar.get_height()
+                plt.text(bar.get_x() + bar.get_width()/2., height + (0.5 if height > 0 else -1),
+                        f'{height:+.1f}%', ha='center', va='bottom' if height > 0 else 'top')
+            
+            plt.tight_layout()
+            
+            # Save chart
+            chart_file = os.path.join(self.output_dir, "price_per_sqm_comparison.png")
+            plt.savefig(chart_file, dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            print(f"   📊 Chart saved: price_per_sqm_comparison.png")
+            
+        except Exception as e:
+            logging.error(f"Error creating price per sqm comparison chart: {e}")
+
+    def compare_current_vs_historical_prices(self):
+        """General comparison of current listings vs historical sales prices (works with any data)"""
+        print("\n=== CURRENT vs HISTORICAL PRICE COMPARISON ===")
+        
+        # Check if we have both current and historical data
+        if self.current_df.empty:
+            print("❌ No current listings data available for comparison")
+            return None
+            
+        if self.historical_df.empty:
+            print("❌ No historical sales data available for comparison")
+            return None
+            
+        # Prepare historical data
+        historical_data = self.historical_df.copy()
+        historical_data['Contract date'] = pd.to_datetime(historical_data['Contract date'], errors='coerce')
+        
+        # Filter for properties with valid price data
+        historical_price_data = historical_data.dropna(subset=['Purchase price'])
+        historical_price_data = historical_price_data[historical_price_data['Purchase price'] > 0]
+        
+        if len(historical_price_data) == 0:
+            print("ℹ️  No historical data with valid price information available")
+            return None
+            
+        # Prepare current data
+        current_data = self.current_df.copy()
+        current_price_data = current_data.dropna(subset=['price'])
+        current_price_data = current_price_data[current_price_data['price'] > 0]
+        
+        if len(current_price_data) == 0:
+            print("ℹ️  No current listings with valid price information available")
+            return None
+            
+        print(f"📊 Data Summary:")
+        print(f"   Historical sales with price data: {len(historical_price_data):,}")
+        print(f"   Current listings with price data: {len(current_price_data):,}")
+        
+        # Overall comparison
+        historical_median = historical_price_data['Purchase price'].median()
+        current_median = current_price_data['price'].median()
+        historical_mean = historical_price_data['Purchase price'].mean()
+        current_mean = current_price_data['price'].mean()
+        
+        print(f"\n💰 OVERALL PRICE COMPARISON:")
+        print(f"   Historical Sales (Median): ${historical_median:,.0f}")
+        print(f"   Current Listings (Median): ${current_median:,.0f}")
+        print(f"   Difference: {((current_median - historical_median) / historical_median * 100):+.1f}%")
+        
+        print(f"\n   Historical Sales (Mean): ${historical_mean:,.0f}")
+        print(f"   Current Listings (Mean): ${current_mean:,.0f}")
+        print(f"   Difference: {((current_mean - historical_mean) / historical_mean * 100):+.1f}%")
+        
+        # Recent historical comparison (last 2 years)
+        two_years_ago = datetime.now() - pd.DateOffset(years=2)
+        recent_historical = historical_price_data[historical_price_data['Contract date'] >= two_years_ago]
+        
+        if len(recent_historical) > 0:
+            recent_median = recent_historical['Purchase price'].median()
+            recent_mean = recent_historical['Purchase price'].mean()
+            
+            print(f"\n📈 RECENT SALES COMPARISON (Last 2 Years):")
+            print(f"   Recent Sales (Median): ${recent_median:,.0f}")
+            print(f"   Current Listings (Median): ${current_median:,.0f}")
+            print(f"   Difference: {((current_median - recent_median) / recent_median * 100):+.1f}%")
+            
+            print(f"\n   Recent Sales (Mean): ${recent_mean:,.0f}")
+            print(f"   Current Listings (Mean): ${current_mean:,.0f}")
+            print(f"   Difference: {((current_mean - recent_mean) / recent_mean * 100):+.1f}%")
+        
+        # Comparison by postcode (if postcodes match)
+        print(f"\n🏘️ PRICE COMPARISON BY POSTCODE:")
+        
+        comparison_data = []
+        
+        # Get unique postcodes from both datasets and ensure they're strings
+        hist_postcodes = set(historical_price_data['Property post code'].astype(str).unique())
+        current_postcodes = set(current_price_data['postcode'].astype(str).unique())
+        matching_postcodes = hist_postcodes & current_postcodes  # Only postcodes that exist in both datasets
+        
+        if len(matching_postcodes) == 0:
+            print("ℹ️  No matching postcodes between historical and current data")
+            return None
+        
+        for postcode in sorted(matching_postcodes):
+            # Historical data for this postcode
+            hist_postcode_data = historical_price_data[historical_price_data['Property post code'] == str(postcode)]
+            current_postcode_data = current_price_data[current_price_data['postcode'] == str(postcode)]
+            
+            if len(hist_postcode_data) > 0 and len(current_postcode_data) > 0:
+                hist_median = hist_postcode_data['Purchase price'].median()
+                current_median = current_postcode_data['price'].median()
+                difference_pct = ((current_median - hist_median) / hist_median * 100)
+                
+                # Get suburb name
+                suburb = current_postcode_data['suburb'].iloc[0] if len(current_postcode_data) > 0 else "Unknown"
+                
+                print(f"   {suburb} ({postcode}):")
+                print(f"     Historical: ${hist_median:,.0f} ({len(hist_postcode_data)} sales)")
+                print(f"     Current: ${current_median:,.0f} ({len(current_postcode_data)} listings)")
+                print(f"     Difference: {difference_pct:+.1f}%")
+                
+                comparison_data.append({
+                    'postcode': postcode,
+                    'suburb': suburb,
+                    'historical_median_price': hist_median,
+                    'current_median_price': current_median,
+                    'difference_percentage': difference_pct,
+                    'historical_sales_count': len(hist_postcode_data),
+                    'current_listings_count': len(current_postcode_data)
+                })
+        
+        # Save comparison data
+        if comparison_data:
+            comparison_df = pd.DataFrame(comparison_data)
+            comparison_df = comparison_df.sort_values('difference_percentage', ascending=False)
+            comparison_file = os.path.join(self.output_dir, "price_comparison.csv")
+            comparison_df.to_csv(comparison_file, index=False)
+            
+            print(f"\n📊 COMPARISON SUMMARY:")
+            print(f"   Postcodes with matching data: {len(comparison_data)}")
+            print(f"   Average difference: {comparison_df['difference_percentage'].mean():+.1f}%")
+            print(f"   Median difference: {comparison_df['difference_percentage'].median():+.1f}%")
+            
+            # Market insights
+            positive_diff = comparison_df[comparison_df['difference_percentage'] > 0]
+            negative_diff = comparison_df[comparison_df['difference_percentage'] < 0]
+            
+            print(f"\n💡 MARKET INSIGHTS:")
+            print(f"   Postcodes where current listings > historical sales: {len(positive_diff)}")
+            print(f"   Postcodes where current listings < historical sales: {len(negative_diff)}")
+            
+            if len(positive_diff) > 0:
+                top_overvalued = positive_diff.head(3)
+                print(f"\n   📈 Top 3 'Overvalued' Postcodes (Current > Historical):")
+                for _, row in top_overvalued.iterrows():
+                    print(f"     {row['suburb']} ({row['postcode']}): +{row['difference_percentage']:.1f}%")
+            
+            if len(negative_diff) > 0:
+                top_undervalued = negative_diff.head(3)
+                print(f"\n   📉 Top 3 'Undervalued' Postcodes (Current < Historical):")
+                for _, row in top_undervalued.iterrows():
+                    print(f"     {row['suburb']} ({row['postcode']}): {row['difference_percentage']:.1f}%")
+            
+            return comparison_df
+        
+        return None
 
 if __name__ == "__main__":
     analyzer = EasternSuburbsAnalyzer()

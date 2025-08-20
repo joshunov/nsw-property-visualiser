@@ -186,6 +186,9 @@ class CurrentPropertyExtractor:
             bathrooms = self._extract_bathrooms(details_text)
             parking = self._extract_parking(details_text)
             
+            # Extract square meters
+            square_meters = self._extract_square_meters(card, details_text)
+            
             # Extract property type
             property_type = self._extract_property_type(card)
             
@@ -219,6 +222,7 @@ class CurrentPropertyExtractor:
                 'bedrooms': bedrooms,
                 'bathrooms': bathrooms,
                 'parking': parking,
+                'square_meters': square_meters,
                 'property_type': property_type,
                 'listing_date': listing_date,
                 'source': 'realestate.com.au',
@@ -433,6 +437,9 @@ class CurrentPropertyExtractor:
             bathrooms = self._extract_bathrooms(features_text)
             parking = self._extract_parking(features_text)
             
+            # Extract square meters
+            square_meters = self._extract_square_meters(card, features_text)
+            
             # Get postcode from address or use Eastern Suburbs mapping
             postcode = self._extract_postcode(address)
             if not postcode:
@@ -460,6 +467,7 @@ class CurrentPropertyExtractor:
                 'bedrooms': bedrooms,
                 'bathrooms': bathrooms,
                 'parking': parking,
+                'square_meters': square_meters,
                 'property_type': 'House',  # Domain search is for houses
                 'listing_date': datetime.now().strftime('%Y-%m-%d'),
                 'source': 'domain.com.au',
@@ -479,7 +487,7 @@ class CurrentPropertyExtractor:
             # Create empty DataFrame with correct structure
             df = pd.DataFrame(columns=[
                 'address', 'suburb', 'state', 'postcode', 'price', 'price_display',
-                'bedrooms', 'bathrooms', 'parking', 'property_type', 'listing_date',
+                'bedrooms', 'bathrooms', 'parking', 'square_meters', 'property_type', 'listing_date',
                 'source', 'data_type', 'Contract date', 'Settlement date', 'Purchase price',
                 'Property locality', 'Property street name', 'Property post code',
                 'Area', 'Zoning', 'Primary purpose'
@@ -519,7 +527,8 @@ class CurrentPropertyExtractor:
         df['Property locality'] = df['suburb']
         df['Property street name'] = df['address'].apply(lambda x: x.split(',')[0] if ',' in x else x)
         df['Property post code'] = df['postcode']
-        df['Area'] = 0  # Not available from current listings
+        # Map square_meters to Area field (historical data format)
+        df['Area'] = df.get('square_meters', 0)
         df['Zoning'] = 'Residential'
         df['Primary purpose'] = 'House'
         
@@ -584,6 +593,7 @@ class CurrentPropertyExtractor:
                     'bedrooms': bedrooms,
                     'bathrooms': bathrooms,
                     'parking': 1,
+                    'square_meters': area,
                     'property_type': 'House',
                     'listing_date': datetime.now().strftime('%Y-%m-%d'),
                     'source': 'sample_data',
@@ -626,6 +636,79 @@ class CurrentPropertyExtractor:
         logging.info(f'Output saved to: {output_file}')
         
         return output_file
+
+    def _extract_square_meters(self, card, details_text):
+        """Extract square meter data from property card"""
+        try:
+            # Try multiple selectors for square meter data
+            sqm_selectors = [
+                'span[data-testid="property-features-text"]',
+                'span[data-testid="property-size"]',
+                'div[data-testid="property-size"]',
+                'span.size',
+                'div.size',
+                'span[data-testid="land-size"]',
+                'div[data-testid="land-size"]',
+                'span.land-size',
+                'div.land-size'
+            ]
+            
+            # First try to find square meter data in the card elements
+            for selector in sqm_selectors:
+                sqm_elem = card.select_one(selector)
+                if sqm_elem:
+                    sqm_text = sqm_elem.text.strip()
+                    sqm = self._parse_square_meters(sqm_text)
+                    if sqm > 0:
+                        return sqm
+            
+            # If not found in elements, try to extract from details text
+            if details_text:
+                sqm = self._parse_square_meters(details_text)
+                if sqm > 0:
+                    return sqm
+            
+            # If still not found, try to extract from the entire card text
+            card_text = card.get_text()
+            sqm = self._parse_square_meters(card_text)
+            return sqm if sqm > 0 else 0
+            
+        except Exception as e:
+            logging.warning(f'Error extracting square meters: {e}')
+            return 0
+    
+    def _parse_square_meters(self, text):
+        """Parse square meter value from text"""
+        if not text:
+            return 0
+        
+        # Common patterns for square meters
+        patterns = [
+            r'(\d+(?:,\d+)?(?:\.\d+)?)\s*(?:sq\s*m|sqm|m²|square\s*meters?)',
+            r'(\d+(?:,\d+)?(?:\.\d+)?)\s*(?:sq\s*ft|sqft|ft²|square\s*feet?)',
+            r'(\d+(?:,\d+)?(?:\.\d+)?)\s*(?:acres?|ac)',
+            r'(\d+(?:,\d+)?(?:\.\d+)?)\s*(?:hectares?|ha)',
+            r'(\d+(?:,\d+)?(?:\.\d+)?)\s*(?:sq\s*yd|sqyd|yd²|square\s*yards?)'
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, text.lower())
+            if match:
+                value = float(match.group(1).replace(',', ''))
+                
+                # Convert to square meters based on unit
+                if 'sq ft' in match.group(0) or 'sqft' in match.group(0) or 'ft²' in match.group(0):
+                    return int(value * 0.092903)  # Convert sq ft to sq m
+                elif 'acres' in match.group(0) or 'ac' in match.group(0):
+                    return int(value * 4046.86)  # Convert acres to sq m
+                elif 'hectares' in match.group(0) or 'ha' in match.group(0):
+                    return int(value * 10000)  # Convert hectares to sq m
+                elif 'sq yd' in match.group(0) or 'sqyd' in match.group(0) or 'yd²' in match.group(0):
+                    return int(value * 0.836127)  # Convert sq yards to sq m
+                else:
+                    return int(value)  # Already in square meters
+        
+        return 0
 
 if __name__ == "__main__":
     extractor = CurrentPropertyExtractor()
