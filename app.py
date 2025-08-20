@@ -115,11 +115,18 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-@st.cache_data
+@st.cache_data(ttl=3600)  # Cache for 1 hour
 def load_data():
     """Load property data with caching"""
     loader = DataLoader()
-    return loader.load_all_data()
+    data = loader.load_all_data()
+    
+    # Debug logging
+    print(f"🔍 Data loaded: {len(data['current_data'])} current, {len(data['historical_data'])} historical")
+    if len(data['current_data']) > 0:
+        print(f"🔍 Sample address: {data['current_data']['address'].iloc[0]}")
+    
+    return data
 
 
 def show_dashboard(data_processor: DataProcessor, data_loader: DataLoader):
