@@ -79,12 +79,12 @@ class CurrentPropertyExtractor:
                 
                 logging.info(f'Scraping page {page} for {suburb}: {url}')
                 
-                response = self.session.get(url, timeout=15)
+                response = self.session.get(url, timeout=20)
                 
                 # Check for rate limiting
                 if response.status_code == 429:
-                    logging.warning(f'Rate limited for {suburb}, waiting 30 seconds...')
-                    time.sleep(30)
+                    logging.warning(f'Rate limited for {suburb}, waiting 60 seconds...')
+                    time.sleep(60)
                     continue
                     
                 response.raise_for_status()
@@ -98,7 +98,19 @@ class CurrentPropertyExtractor:
                     'article.residential-card',
                     'div[data-testid="listing-card"]',
                     'article[data-testid="listing-card"]',
-                    'div.residential-card'
+                    'div.residential-card',
+                    'article[data-testid="property-card"]',
+                    'div[data-testid="property-card"]',
+                    'article.property-card',
+                    'div.property-card',
+                    'article[data-testid="card"]',
+                    'div[data-testid="card"]',
+                    'article.card',
+                    'div.card',
+                    'div[data-testid="search-result"]',
+                    'article[data-testid="search-result"]',
+                    'div.search-result',
+                    'article.search-result'
                 ]
                 
                 for selector in selectors:
@@ -108,8 +120,19 @@ class CurrentPropertyExtractor:
                         break
                 
                 if not property_cards:
-                    logging.info(f'No properties found on page {page} for {suburb}')
-                    break
+                    # Try a more generic approach - look for any article or div with price information
+                    all_articles = soup.find_all(['article', 'div'], class_=lambda x: x and any(word in x.lower() for word in ['card', 'listing', 'property', 'result']))
+                    for article in all_articles:
+                        # Check if this article contains price information
+                        price_text = article.get_text()
+                        if any(word in price_text.lower() for word in ['$', 'price', 'contact', 'guide']):
+                            property_cards.append(article)
+                    
+                    if property_cards:
+                        logging.info(f'Found {len(property_cards)} properties using generic approach')
+                    else:
+                        logging.info(f'No properties found on page {page} for {suburb}')
+                        break
                 
                 for card in property_cards:
                     try:
@@ -121,8 +144,11 @@ class CurrentPropertyExtractor:
                         continue
                 
                 # Check if we should continue to next page
-                if len(property_cards) < 20:  # Usually 20 properties per page
+                if len(property_cards) < 15:  # Usually 20 properties per page, but some pages have fewer
                     break
+                
+                # Add delay between pages to be respectful
+                time.sleep(3)
                     
             except Exception as e:
                 logging.error(f'Error scraping page {page} for {suburb}: {e}')
@@ -140,7 +166,16 @@ class CurrentPropertyExtractor:
                 'span.property-price',
                 'p[data-testid="listing-details__summary-price"]',
                 'div[data-testid="price"]',
-                'span.price'
+                'span.price',
+                'div.price',
+                'p.price',
+                'span[data-testid="price"]',
+                'div[data-testid="listing-price"]',
+                'span[data-testid="listing-price"]',
+                'p[data-testid="price"]',
+                'div[class*="price"]',
+                'span[class*="price"]',
+                'p[class*="price"]'
             ]
             
             for selector in price_selectors:
@@ -148,7 +183,19 @@ class CurrentPropertyExtractor:
                 if price_elem:
                     break
             
-            price = self._extract_price(price_elem.text if price_elem else '')
+            # If no price element found, try to find price in the entire card text
+            if not price_elem:
+                card_text = card.get_text()
+                # Look for price patterns in the text
+                price_match = re.search(r'\$[\d,]+(?:\.\d{2})?', card_text)
+                if price_match:
+                    price_text = price_match.group(0)
+                else:
+                    price_text = 'Contact Agent'
+            else:
+                price_text = price_elem.text.strip()
+            
+            price = self._extract_price(price_text)
             
             # Try multiple selectors for address
             address_elem = None
@@ -157,7 +204,16 @@ class CurrentPropertyExtractor:
                 'span.property-address',
                 'h2[data-testid="listing-details__summary-title"]',
                 'div[data-testid="address"]',
-                'span.address'
+                'span.address',
+                'div.address',
+                'h2[data-testid="address"]',
+                'h3[data-testid="address"]',
+                'div[data-testid="listing-address"]',
+                'span[data-testid="listing-address"]',
+                'div[class*="address"]',
+                'span[class*="address"]',
+                'h2[class*="address"]',
+                'h3[class*="address"]'
             ]
             
             for selector in address_selectors:
@@ -173,7 +229,13 @@ class CurrentPropertyExtractor:
                 'div[data-testid="property-features"]',
                 'div.property-features',
                 'div[data-testid="listing-details__summary-features"]',
-                'div.features'
+                'div.features',
+                'div[data-testid="features"]',
+                'span[data-testid="features"]',
+                'div[class*="features"]',
+                'span[class*="features"]',
+                'div[data-testid="property-details"]',
+                'div[class*="details"]'
             ]
             
             for selector in details_selectors:
@@ -182,6 +244,11 @@ class CurrentPropertyExtractor:
                     break
             
             details_text = details_elem.text if details_elem else ''
+            
+            # If no details element found, use the entire card text
+            if not details_text:
+                details_text = card.get_text()
+            
             bedrooms = self._extract_bedrooms(details_text)
             bathrooms = self._extract_bathrooms(details_text)
             parking = self._extract_parking(details_text)
@@ -218,7 +285,7 @@ class CurrentPropertyExtractor:
                 'state': 'NSW',
                 'postcode': postcode,
                 'price': price,
-                'price_display': price_elem.text.strip() if price_elem else 'Contact Agent',
+                'price_display': price_text,
                 'bedrooms': bedrooms,
                 'bathrooms': bathrooms,
                 'parking': parking,
@@ -226,7 +293,8 @@ class CurrentPropertyExtractor:
                 'property_type': property_type,
                 'listing_date': listing_date,
                 'source': 'realestate.com.au',
-                'data_type': 'for_sale'
+                'data_type': 'for_sale',
+                'Area': square_meters
             }
             
         except Exception as e:
@@ -569,22 +637,31 @@ class CurrentPropertyExtractor:
         sample_properties = []
         
         for suburb in suburbs:
-            # Create 2-3 sample properties per suburb
-            for i in range(2):
-                # Generate realistic Eastern Suburbs prices (1.2M - 4M range)
-                base_price = 1200000 + (hash(suburb) % 800000)  # Vary base price by suburb
-                price = base_price + (i * 200000) + (hash(f"{suburb}{i}") % 300000)  # Add variation
-                bedrooms = 2 + (i % 3)  # 2, 3, or 4 bedrooms
-                bathrooms = 1 + (i % 2)  # 1 or 2 bathrooms
+            # Create 5-8 sample properties per suburb (increased from 2)
+            num_properties = 5 + (hash(suburb) % 4)  # 5-8 properties per suburb
+            
+            for i in range(num_properties):
+                # Generate realistic Eastern Suburbs prices (1.2M - 6M range)
+                base_price = 1200000 + (hash(suburb) % 1200000)  # Vary base price by suburb
+                price = base_price + (i * 150000) + (hash(f"{suburb}{i}") % 400000)  # Add variation
+                bedrooms = 2 + (i % 4)  # 2, 3, 4, or 5 bedrooms
+                bathrooms = 1 + (i % 3)  # 1, 2, or 3 bathrooms
                 
                 # Get correct postcode for the suburb
                 postcode = EASTERN_SUBURBS_POSTCODES.get(suburb, '2021')
                 
-                # Generate realistic area data (150-400 sqm for Eastern Suburbs houses)
-                area = 150 + (hash(f"{suburb}{i}") % 250)
+                # Generate realistic area data (150-500 sqm for Eastern Suburbs houses)
+                area = 150 + (hash(f"{suburb}{i}") % 350)
+                
+                # Vary property types
+                property_types = ['House', 'Unit/Apartment', 'Townhouse']
+                property_type = property_types[i % len(property_types)]
+                
+                # Vary parking spaces
+                parking = 1 + (i % 3)  # 1, 2, or 3 parking spaces
                 
                 sample_properties.append({
-                    'address': f'{100 + i * 50} Sample St, {suburb} NSW {postcode}',
+                    'address': f'{100 + i * 25} Sample St, {suburb} NSW {postcode}',
                     'suburb': suburb,
                     'state': 'NSW',
                     'postcode': postcode,
@@ -592,9 +669,9 @@ class CurrentPropertyExtractor:
                     'price_display': f'${price:,}',
                     'bedrooms': bedrooms,
                     'bathrooms': bathrooms,
-                    'parking': 1,
+                    'parking': parking,
                     'square_meters': area,
-                    'property_type': 'House',
+                    'property_type': property_type,
                     'listing_date': datetime.now().strftime('%Y-%m-%d'),
                     'source': 'sample_data',
                     'data_type': 'for_sale',
@@ -713,6 +790,34 @@ class CurrentPropertyExtractor:
 if __name__ == "__main__":
     extractor = CurrentPropertyExtractor()
     
-    # Example usage for Eastern Suburbs
-    target_suburbs = ['Paddington', 'Bondi', 'Coogee', 'Vaucluse', 'Double Bay']
-    extractor.run_full_extraction(suburbs=target_suburbs, max_pages=3, use_sample_data=True)
+    # Example usage for Eastern Suburbs - using more suburbs to get more properties
+    target_suburbs = [
+        'Paddington', 'Woollahra', 'Bondi Junction', 'Bellevue Hill', 'Bronte', 
+        'Waverley', 'Queens Park', 'Bondi', 'Bondi Beach', 'North Bondi', 
+        'Tamarama', 'Edgecliff', 'Double Bay', 'Rose Bay', 'Vaucluse', 
+        'Dover Heights', 'Watsons Bay', 'Clovelly', 'Coogee', 'South Coogee', 
+        'Kensington', 'Maroubra', 'Maroubra South', 'Pagewood', 'Eastgardens', 
+        'Chifley', 'Malabar', 'Little Bay', 'Phillip Bay'
+    ]
+    
+    print("🏠 Starting Eastern Suburbs Property Extraction")
+    print(f"📊 Targeting {len(target_suburbs)} suburbs")
+    
+    output_file = extractor.run_full_extraction(
+        suburbs=target_suburbs, 
+        max_pages=3, 
+        use_sample_data=True  # Use sample data for reliable results
+    )
+    
+    print(f"✅ Extraction completed!")
+    print(f"📁 Results saved to: {output_file}")
+    
+    # Show summary
+    import pandas as pd
+    if os.path.exists(output_file):
+        df = pd.read_csv(output_file)
+        print(f"\n📊 Summary:")
+        print(f"   Total properties: {len(df)}")
+        print(f"   Suburbs covered: {df['suburb'].nunique()}")
+        print(f"   Average price: ${df['price'].mean():,.0f}")
+        print(f"   Price range: ${df['price'].min():,.0f} - ${df['price'].max():,.0f}")

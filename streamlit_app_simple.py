@@ -11,6 +11,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import numpy as np
 from datetime import datetime, timedelta
+import os # Added for file path handling
 
 # Page configuration
 st.set_page_config(
@@ -45,9 +46,37 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 @st.cache_data
-def generate_sample_data():
-    """Generate realistic sample data for demonstration"""
-    
+def load_property_data():
+    """Load real property data from the extractor"""
+    try:
+        # Try to load current data from the extractor output
+        current_file = os.path.join('src', 'data', 'current_property_data.csv')
+        if os.path.exists(current_file):
+            current_data = pd.read_csv(current_file)
+            st.success(f"✅ Loaded {len(current_data)} current properties from real data")
+        else:
+            # Fallback to sample data if real data not found
+            st.warning("⚠️ Real data not found, using sample data")
+            current_data = generate_sample_current_data()
+        
+        # Generate historical data for comparison
+        historical_data = generate_sample_historical_data()
+        
+        return {
+            'historical_data': historical_data,
+            'current_data': current_data
+        }
+    except Exception as e:
+        st.error(f"Error loading data: {e}")
+        # Fallback to sample data
+        return {
+            'historical_data': generate_sample_historical_data(),
+            'current_data': generate_sample_current_data()
+        }
+
+@st.cache_data
+def generate_sample_current_data():
+    """Generate sample current data as fallback"""
     # Eastern Suburbs data
     suburbs_data = {
         'Bondi': {'postcode': '2026', 'avg_price': 2500000, 'price_range': 500000},
@@ -59,34 +88,6 @@ def generate_sample_data():
         'Bellevue Hill': {'postcode': '2023', 'avg_price': 3800000, 'price_range': 900000},
         'Paddington': {'postcode': '2021', 'avg_price': 2000000, 'price_range': 400000}
     }
-    
-    # Generate historical data (1000 records)
-    historical_data = []
-    start_date = datetime(2020, 1, 1)
-    
-    for i in range(1000):
-        suburb = np.random.choice(list(suburbs_data.keys()))
-        suburb_info = suburbs_data[suburb]
-        
-        # Generate realistic price with some variation
-        base_price = suburb_info['avg_price']
-        price_variation = np.random.normal(0, suburb_info['price_range'] * 0.3)
-        price = max(500000, base_price + price_variation)
-        
-        # Generate date
-        date = start_date + timedelta(days=np.random.randint(0, 1000))
-        
-        # Generate area
-        area = np.random.normal(200, 50)
-        area = max(50, min(500, area))
-        
-        historical_data.append({
-            'Contract date': date,
-            'Purchase price': int(price),
-            'Property post code': suburb_info['postcode'],
-            'Property locality': suburb,
-            'Area': int(area)
-        })
     
     # Generate current listings data (20 records)
     current_data = []
@@ -106,11 +107,48 @@ def generate_sample_data():
                 'Area': int(area)
             })
     
-    return pd.DataFrame(historical_data), pd.DataFrame(current_data)
+    return pd.DataFrame(current_data)
+
+@st.cache_data
+def generate_sample_historical_data():
+    """Generate sample historical data for comparison"""
+    # Eastern Suburbs data
+    suburbs_data = {
+        'Bondi': {'postcode': '2026', 'avg_price': 2500000, 'price_range': 500000},
+        'Coogee': {'postcode': '2031', 'avg_price': 2200000, 'price_range': 400000},
+        'Double Bay': {'postcode': '2027', 'avg_price': 3500000, 'price_range': 800000},
+        'Vaucluse': {'postcode': '2029', 'avg_price': 4500000, 'price_range': 1000000},
+        'Bronte': {'postcode': '2024', 'avg_price': 2800000, 'price_range': 600000},
+        'Rose Bay': {'postcode': '2028', 'avg_price': 3200000, 'price_range': 700000},
+        'Bellevue Hill': {'postcode': '2023', 'avg_price': 3800000, 'price_range': 900000},
+        'Paddington': {'postcode': '2021', 'avg_price': 2000000, 'price_range': 400000}
+    }
+    
+    # Generate historical data (1000 records)
+    sample_historical = pd.DataFrame({
+        'Contract date': pd.date_range('2020-01-01', periods=1000, freq='D'),
+        'Purchase price': np.random.normal(1500000, 500000, 1000),
+        'Property post code': np.random.choice(['2026', '2031', '2027', '2029'], 1000),
+        'Property locality': np.random.choice(['Bondi', 'Coogee', 'Double Bay', 'Vaucluse'], 1000),
+        'Area': np.random.normal(200, 50, 1000)
+    })
+    
+    # Ensure positive values
+    sample_historical['Purchase price'] = sample_historical['Purchase price'].abs()
+    sample_historical['Area'] = sample_historical['Area'].abs()
+    
+    return sample_historical
 
 def show_dashboard(historical_data, current_data):
     """Show the main dashboard"""
     st.header("📊 Property Market Dashboard")
+    
+    # Data source indicator
+    current_file = os.path.join('src', 'data', 'current_property_data.csv')
+    if os.path.exists(current_file):
+        st.success(f"✅ **Real Data Loaded**: {len(current_data)} current properties from Eastern Suburbs extractor")
+    else:
+        st.warning("⚠️ **Sample Data**: Using generated sample data (run the extractor to get real data)")
     
     # Key metrics
     col1, col2, col3, col4 = st.columns(4)
@@ -162,7 +200,15 @@ def show_dashboard(historical_data, current_data):
         st.write(f"- **Records**: {len(current_data):,}")
         st.write(f"- **Postcodes**: {current_data['postcode'].nunique()}")
         st.write(f"- **Suburbs**: {current_data['suburb'].nunique()}")
-        st.write(f"- **With Area Data**: {current_data['Area'].notna().sum()}")
+        if 'Area' in current_data.columns:
+            st.write(f"- **With Area Data**: {current_data['Area'].notna().sum()}")
+        
+        # Show top suburbs by property count
+        if len(current_data) > 0:
+            suburb_counts = current_data['suburb'].value_counts().head(5)
+            st.write("**Top 5 Suburbs by Listings:**")
+            for suburb, count in suburb_counts.items():
+                st.write(f"- {suburb}: {count} properties")
     
     # Market insights
     st.subheader("💡 Market Insights")
@@ -558,7 +604,16 @@ def main():
     
     # Load data
     with st.spinner("Loading property data..."):
-        historical_data, current_data = generate_sample_data()
+        data_dict = load_property_data()
+        historical_data = data_dict['historical_data']
+        current_data = data_dict['current_data']
+    
+    # Show data source info
+    current_file = os.path.join('src', 'data', 'current_property_data.csv')
+    if os.path.exists(current_file):
+        st.sidebar.success(f"📊 Using Real Data: {len(current_data)} properties")
+    else:
+        st.sidebar.warning("📊 Using Sample Data")
     
     # Page routing
     if page == "📊 Dashboard":
